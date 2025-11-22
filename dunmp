@@ -1,0 +1,43 @@
+# stop & remove eventuale container
+docker stop mlflow 2>/dev/null || true
+docker rm -f mlflow 2>/dev/null || true
+
+# libera porta 5000 se bloccata
+sudo fuser -k 5000/tcp 2>/dev/null || true
+
+# (opzionale) svuota la cartella di artifacts/DB locali
+rm -rf mlruns && mkdir -p mlruns
+
+docker run -d --name mlflow -p 5000:5000 \
+  -v "$(pwd)/mlruns:/mlruns" \
+  ghcr.io/mlflow/mlflow:v2.16.0 \
+  mlflow server --host 0.0.0.0 --port 5000 \
+  --backend-store-uri sqlite:////mlruns/mlflow.db \
+  --artifacts-destination file:///mlruns \
+  --serve-artifacts
+
+
+docker logs --tail 50 mlflow
+
+
+unset MLFLOW_ARTIFACT_URI
+export MLFLOW_TRACKING_URI=http://localhost:5000
+
+
+python - <<'PY'
+import mlflow, json
+mlflow.set_experiment("check-artifact-uri")
+with mlflow.start_run() as run:
+    print("RUN ID:", run.info.run_id)
+    info = mlflow.get_run(run.info.run_id).info
+    print("artifact_uri:", info.artifact_uri)
+PY
+
+export MLFLOW_TRACKING_URI=http://localhost:5000
+python -m src.models.train_roberta --experiment sentiment_m2
+
+NEW_URI="runs:/7308c35a93ce42f892c69fe99e4e031a/model"
+python -m src.models.evaluate --new_model_uri "$NEW_URI" --eval_csv data/holdoutENG.csv --min_improvement 0.0
+
+export MODEL_URI=models:/Sentiment/Production
+uvicorn src.serving.app:app --reload --port 8000
