@@ -23,5 +23,5 @@ jobs:
       - name: Pytest
         run: pytest -q
       - name: Docker build
-        run: docker build -t MachineInnovorsInc_PROAI -f docker/Dockerfile.app .
+        run: docker build -t machineinnovators_inc_proai -f docker/Dockerfile.app .
         
