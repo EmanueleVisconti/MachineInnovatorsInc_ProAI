@@ -41,3 +41,34 @@ python -m src.models.evaluate --new_model_uri "$NEW_URI" --eval_csv data/holdout
 
 export MODEL_URI=models:/Sentiment/Production
 uvicorn src.serving.app:app --reload --port 8000
+
+--------
+
+mkdir -p data/raw data/incoming artifacts
+cp data/holdoutENG.csv data/raw/reference.csv
+cp data/holdoutENG.csv data/incoming/2025-11-22.csv
+
+-----
+
+docker compose up -d mlflow airflow
+
+
+---
+
+df -h
+docker system df
+du -xh ~ | sort -h | tail -20
+du -xh . | sort -h | tail -20
+
+# contenitori/immagini/reti/volumi non usati
+docker system prune -af --volumes
+# cache builder (layer build)
+docker builder prune -af
+
+rm -rf ~/.cache/huggingface
+rm -rf ~/.cache/torch
+
+# ATTENZIONE: perderai esperimenti/artifacts locali
+docker stop mlflow 2>/dev/null || true
+rm -rf mlruns/*
+mkdir -p mlruns

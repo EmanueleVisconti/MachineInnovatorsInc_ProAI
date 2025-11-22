@@ -1,8 +1,36 @@
+# docker-compose.yml (aggiunta del servizio airflow)
 version: "3.8"
 services:
   app:
     build:
       context: .
       dockerfile: docker/Dockerfile.app
-    ports:
-      - "8000:8000"
+    ports: ["8000:8000"]
+
+  mlflow:
+    image: ghcr.io/mlflow/mlflow:v2.16.0
+    command: >-
+      mlflow server --host 0.0.0.0 --port 5000
+      --backend-store-uri sqlite:////mlruns/mlflow.db
+      --artifacts-destination file:///mlruns
+      --serve-artifacts
+    volumes:
+      - ./mlruns:/mlruns
+    ports: ["5000:5000"]
+
+  airflow:
+    image: apache/airflow:2.9.2
+    environment:
+      - AIRFLOW__CORE__LOAD_EXAMPLES=False
+      - AIRFLOW__CORE__EXECUTOR=LocalExecutor
+      - _PIP_ADDITIONAL_REQUIREMENTS=Evidently==0.4.36 transformers==4.45.2 torch==2.4.1 pandas==2.2.3 scikit-learn==1.5.2 mlflow==2.16.0
+      - MLFLOW_TRACKING_URI=http://mlflow:5000
+      - REGISTERED_MODEL_NAME=Sentiment
+    volumes:
+      - ./airflow/dags:/opt/airflow/dags
+      - ./src:/opt/airflow/src
+      - ./data:/opt/airflow/data
+      - ./artifacts:/opt/airflow/artifacts
+    ports: ["8080:8080"]
+    command: bash -lc "pip install --no-cache-dir ${_PIP_ADDITIONAL_REQUIREMENTS} && airflow db init && airflow users create --username admin --password admin --firstname a --lastname b --role Admin --email admin@example.com && airflow webserver & airflow scheduler"
+    depends_on: [mlflow]

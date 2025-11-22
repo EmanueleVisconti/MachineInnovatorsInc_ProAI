@@ -1,5 +1,4 @@
 import argparse
-import os
 import mlflow
 import mlflow.pyfunc
 import pandas as pd

@@ -12,3 +12,5 @@ black==24.10.0
 ruff==0.7.2
 mlflow==2.16.0
 cloudpickle==3.0.0
+Evidently==0.4.36
+pandas==2.2.3
