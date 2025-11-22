@@ -39,8 +39,30 @@ def compute_drift():
         "--out",
         ART_DIR,
     ]
-    res = subprocess.run(cmd, check=False)
-    return res.returncode  # 0=no drift, 1=drift
+    proc = subprocess.run(cmd, text=True)
+    code = (
+        proc.returncode if proc.returncode in (0, 1) else 1
+    )  # 0=no drift, 1=drift (default: prudente)
+    # push metrica
+    try:
+        subprocess.check_call(
+            [
+                "python",
+                "-m",
+                "src.monitoring.push_metrics",
+                "--gateway",
+                "http://pushgateway:9091",
+                "--job",
+                "retrain_sentiment",
+                "--instance",
+                "airflow",
+                "--drift",
+                str(code),
+            ]
+        )
+    except Exception as e:
+        print("[drift] pushgateway WARN:", e)
+    return code
 
 
 def branch_callable(**context):
@@ -62,10 +84,11 @@ def train(ti=None):
     # 1) esegui il training (registra nuova versione nel Registry)
     subprocess.check_call(
         ["python", "-m", "src.models.train_roberta", "--experiment", "sentiment"],
-        env=env
+        env=env,
     )
     # 2) risali alla ULTIMA versione registrata e mettila in XCom
     from mlflow.tracking import MlflowClient
+
     client = MlflowClient(tracking_uri=MLFLOW)
     versions = client.search_model_versions(f"name='{MODEL_NAME}'")
     if not versions:
@@ -85,10 +108,13 @@ def evaluate_and_promote(ti=None):
     # 2) fallback robusto: prendi comunque l'ultima versione registrata
     if not new_uri:
         from mlflow.tracking import MlflowClient
+
         client = MlflowClient(tracking_uri=MLFLOW)
         versions = client.search_model_versions(f"name='{MODEL_NAME}'")
         if not versions:
-            raise RuntimeError(f"Nessuna versione trovata per il modello '{MODEL_NAME}'")
+            raise RuntimeError(
+                f"Nessuna versione trovata per il modello '{MODEL_NAME}'"
+            )
         latest = max(versions, key=lambda v: int(v.version))
         new_uri = f"models:/{MODEL_NAME}/{int(latest.version)}"
 
@@ -96,13 +122,20 @@ def evaluate_and_promote(ti=None):
 
     env = os.environ.copy()
     env["MLFLOW_TRACKING_URI"] = MLFLOW
-    subprocess.check_call([
-        "python", "-m", "src.models.evaluate",
-        "--new_model_uri", new_uri,
-        "--eval_csv", HOLDOUT,
-        "--min_improvement", "0.0",
-    ], env=env)
-
+    subprocess.check_call(
+        [
+            "python",
+            "-m",
+            "src.models.evaluate",
+            "--new_model_uri",
+            new_uri,
+            "--eval_csv",
+            HOLDOUT,
+            "--min_improvement",
+            "0.0",
+        ],
+        env=env,
+    )
 
 
 def _noop():

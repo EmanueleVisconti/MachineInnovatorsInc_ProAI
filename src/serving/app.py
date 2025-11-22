@@ -5,8 +5,11 @@ from starlette.responses import Response
 import time
 from ..features.preprocess import normalize_text
 from .load_model import predict_fn
+from src.serving.metrics import MetricsMiddleware, router as metrics_router
 
 app = FastAPI(title="Sentiment Service", version="0.1.0")
+app.add_middleware(MetricsMiddleware)
+app.include_router(metrics_router)
 
 PRED_COUNT = Counter("predictions_total", "Total predictions", ["label"])
 LATENCY = Histogram("inference_latency_seconds", "Latency seconds")

@@ -1,4 +1,4 @@
-name: sentiment
+name: machineinnovatorsinc_proai
 
 volumes:
   airflow_home: {}
@@ -6,71 +6,107 @@ volumes:
 services:
   mlflow:
     image: ghcr.io/mlflow/mlflow:v2.16.0
-    ports: ["5000:5000"]
-    volumes:
-      - ./mlruns:/mlruns
-    command: >
+    command: >-
       mlflow server --host 0.0.0.0 --port 5000
       --backend-store-uri sqlite:////mlruns/mlflow.db
       --artifacts-destination file:///mlruns
       --serve-artifacts
+    volumes:
+      - ./mlruns:/mlruns
+    ports:
+      - "${MLFLOW_PORT:-5000}:5000"
+    # healthcheck disabilitato: dev_sh gestisce readiness via HTTP
+    healthcheck:
+      disable: true
 
+  # one-off: init DB + utente (il comando viene lanciato da dev_sh)
   airflow-init:
     image: apache/airflow:2.9.2
-    user: "0:0"
+    user: "50000:0"
     environment:
-      AIRFLOW_HOME: /opt/airflow_home
+      AIRFLOW_HOME: /opt/airflow
       AIRFLOW__CORE__EXECUTOR: SequentialExecutor
       AIRFLOW__CORE__LOAD_EXAMPLES: "False"
       AIRFLOW__CORE__DAGS_FOLDER: /opt/airflow/dags
-      AIRFLOW__LOGGING__BASE_LOG_FOLDER: /opt/airflow_home/logs
-      AIRFLOW__LOGGING__DAG_PROCESSOR_MANAGER_LOG_LOCATION: /opt/airflow_home/logs/dag_processor_manager/dag_processor_manager.log
+      AIRFLOW__LOGGING__BASE_LOG_FOLDER: /opt/airflow/logs
+      AIRFLOW__LOGGING__DAG_PROCESSOR_MANAGER_LOG_LOCATION: /opt/airflow/logs/dag_processor_manager/dag_processor_manager.log
     volumes:
-      - airflow_home:/opt/airflow_home
+      - airflow_home:/opt/airflow
       - ./airflow/dags:/opt/airflow/dags
       - ./src:/opt/airflow/src
       - ./data:/opt/airflow/data
       - ./artifacts:/opt/airflow/artifacts
-    command:
-      [
-        "bash","-lc",
-        "mkdir -p /opt/airflow_home/{logs,dags,plugins,logs/scheduler} && \
-         chown -R 50000:0 /opt/airflow_home && \
-         su -s /bin/bash -c '/home/airflow/.local/bin/airflow db migrate' airflow && \
-         su -s /bin/bash -c \"/home/airflow/.local/bin/airflow users create \
-           --username admin --password admin --firstname a --lastname b \
-           --role Admin --email admin@example.com\" airflow || true"
-      ]
 
   airflow:
     image: apache/airflow:2.9.2
     user: "50000:0"
-    depends_on:
-      - mlflow
     environment:
-      AIRFLOW_HOME: /opt/airflow_home
+      AIRFLOW_HOME: /opt/airflow
       AIRFLOW__CORE__EXECUTOR: SequentialExecutor
       AIRFLOW__CORE__LOAD_EXAMPLES: "False"
       AIRFLOW__CORE__DAGS_FOLDER: /opt/airflow/dags
-      AIRFLOW__LOGGING__BASE_LOG_FOLDER: /opt/airflow_home/logs
-      AIRFLOW__LOGGING__DAG_PROCESSOR_MANAGER_LOG_LOCATION: /opt/airflow_home/logs/dag_processor_manager/dag_processor_manager.log
+      AIRFLOW__LOGGING__BASE_LOG_FOLDER: /opt/airflow/logs
+      AIRFLOW__LOGGING__DAG_PROCESSOR_MANAGER_LOG_LOCATION: /opt/airflow/logs/dag_processor_manager/dag_processor_manager.log
       PYTHONPATH: /opt/airflow
       MLFLOW_TRACKING_URI: http://mlflow:5000
       REGISTERED_MODEL_NAME: Sentiment
+      _PIP_ADDITIONAL_REQUIREMENTS: >-
+        mlflow==2.16.0 transformers==4.45.2 scikit-learn==1.5.2 Evidently==0.4.36 prometheus-client==0.20.0
     volumes:
-      - airflow_home:/opt/airflow_home
+      - airflow_home:/opt/airflow
       - ./airflow/dags:/opt/airflow/dags
       - ./src:/opt/airflow/src
       - ./data:/opt/airflow/data
       - ./artifacts:/opt/airflow/artifacts
-    ports: ["8080:8080"]
-    command:
-      [
-        "bash","-lc",
-        "pip install --no-cache-dir mlflow==2.16.0 transformers==4.45.2 scikit-learn==1.5.2 Evidently==0.4.36 && \
-         pip install --no-cache-dir --index-url https://download.pytorch.org/whl/cpu \
-           torch==2.4.1+cpu torchvision==0.19.1+cpu torchaudio==2.4.1+cpu && \
-         mkdir -p /opt/airflow_home/logs && \
-         /home/airflow/.local/bin/airflow webserver --port 8080 --hostname 0.0.0.0 & \
-         /home/airflow/.local/bin/airflow scheduler"
-      ]
+    ports:
+      - "${AIRFLOW_PORT:-8080}:8080"
+    command: >
+      bash -lc "
+        echo 'pip reqs: ' $$_PIP_ADDITIONAL_REQUIREMENTS &&
+        pip install --no-cache-dir $$_PIP_ADDITIONAL_REQUIREMENTS &&
+        mkdir -p /opt/airflow/logs &&
+        airflow webserver --port 8080 --hostname 0.0.0.0 & airflow scheduler
+      "
+
+  app:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.app
+    environment:
+      - MODEL_URI=${MODEL_URI:-}
+      - MLFLOW_TRACKING_URI=http://mlflow:5000
+    ports:
+      - "${APP_PORT:-8000}:8000"
+    command: uvicorn src.serving.app:app --host 0.0.0.0 --port 8000
+    depends_on:
+      - mlflow
+
+  pushgateway:
+    image: prom/pushgateway:v1.8.0
+    ports:
+      - "${PUSHGW_PORT:-9091}:9091"
+
+  prometheus:
+    image: prom/prometheus:v2.55.1
+    volumes:
+      - ./docker/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    command: ["--config.file=/etc/prometheus/prometheus.yml"]
+    ports:
+      - "${PROM_PORT:-9090}:9090"
+    depends_on:
+      - app
+      - pushgateway
+
+  grafana:
+    image: grafana/grafana:11.2.0
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    volumes:
+      - ./docker/grafana-datasource.yml:/etc/grafana/provisioning/datasources/datasource.yml:ro
+      - ./docker/grafana-provisioning.yml:/etc/grafana/provisioning/dashboards/provisioning.yml:ro
+      - ./docker/grafana-dashboard.json:/etc/grafana/dashboards/mlops.json:ro
+    ports:
+      - "${GRAFANA_PORT:-3000}:3000"
+    depends_on:
+      - prometheus
