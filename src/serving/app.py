@@ -11,12 +11,15 @@ app = FastAPI(title="Sentiment Service", version="0.1.0")
 PRED_COUNT = Counter("predictions_total", "Total predictions", ["label"])
 LATENCY = Histogram("inference_latency_seconds", "Latency seconds")
 
+
 class Item(BaseModel):
     text: str
+
 
 @app.get("/health")
 def health():
     return {"status": "ok"}
+
 
 @app.post("/predict")
 def predict(item: Item):
@@ -26,6 +29,7 @@ def predict(item: Item):
     LATENCY.observe(time.time() - start)
     PRED_COUNT.labels(label).inc()
     return {"label": label, "score": score}
+
 
 @app.get("/metrics")
 def metrics():

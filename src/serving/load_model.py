@@ -1,4 +1,8 @@
-from transformers import AutoTokenizer, AutoModelForSequenceClassification, TextClassificationPipeline
+from transformers import (
+    AutoTokenizer,
+    AutoModelForSequenceClassification,
+    TextClassificationPipeline,
+)
 
 MODEL_ID = "cardiffnlp/twitter-roberta-base-sentiment-latest"
 
@@ -8,6 +12,7 @@ _label_map = {0: "negative", 1: "neutral", 2: "positive"}
 _tokenizer = None
 _model = None
 _pipeline = None
+
 
 def get_pipeline() -> TextClassificationPipeline:
     global _pipeline, _tokenizer, _model
@@ -45,5 +50,5 @@ def predict_fn(text: str) -> tuple[str, float]:
     if isinstance(first, list):
         first = first[0]
     label = _normalize_label(first["label"])  # type: ignore[index]
-    score = float(first["score"])             # type: ignore[index]
+    score = float(first["score"])  # type: ignore[index]
     return label, score
