@@ -1,36 +1,76 @@
-# docker-compose.yml (aggiunta del servizio airflow)
-version: "3.8"
-services:
-  app:
-    build:
-      context: .
-      dockerfile: docker/Dockerfile.app
-    ports: ["8000:8000"]
+name: sentiment
 
+volumes:
+  airflow_home: {}
+
+services:
   mlflow:
     image: ghcr.io/mlflow/mlflow:v2.16.0
-    command: >-
+    ports: ["5000:5000"]
+    volumes:
+      - ./mlruns:/mlruns
+    command: >
       mlflow server --host 0.0.0.0 --port 5000
       --backend-store-uri sqlite:////mlruns/mlflow.db
       --artifacts-destination file:///mlruns
       --serve-artifacts
+
+  airflow-init:
+    image: apache/airflow:2.9.2
+    user: "0:0"
+    environment:
+      AIRFLOW_HOME: /opt/airflow_home
+      AIRFLOW__CORE__EXECUTOR: SequentialExecutor
+      AIRFLOW__CORE__LOAD_EXAMPLES: "False"
+      AIRFLOW__CORE__DAGS_FOLDER: /opt/airflow/dags
+      AIRFLOW__LOGGING__BASE_LOG_FOLDER: /opt/airflow_home/logs
+      AIRFLOW__LOGGING__DAG_PROCESSOR_MANAGER_LOG_LOCATION: /opt/airflow_home/logs/dag_processor_manager/dag_processor_manager.log
     volumes:
-      - ./mlruns:/mlruns
-    ports: ["5000:5000"]
+      - airflow_home:/opt/airflow_home
+      - ./airflow/dags:/opt/airflow/dags
+      - ./src:/opt/airflow/src
+      - ./data:/opt/airflow/data
+      - ./artifacts:/opt/airflow/artifacts
+    command:
+      [
+        "bash","-lc",
+        "mkdir -p /opt/airflow_home/{logs,dags,plugins,logs/scheduler} && \
+         chown -R 50000:0 /opt/airflow_home && \
+         su -s /bin/bash -c '/home/airflow/.local/bin/airflow db migrate' airflow && \
+         su -s /bin/bash -c \"/home/airflow/.local/bin/airflow users create \
+           --username admin --password admin --firstname a --lastname b \
+           --role Admin --email admin@example.com\" airflow || true"
+      ]
 
   airflow:
     image: apache/airflow:2.9.2
+    user: "50000:0"
+    depends_on:
+      - mlflow
     environment:
-      - AIRFLOW__CORE__LOAD_EXAMPLES=False
-      - AIRFLOW__CORE__EXECUTOR=LocalExecutor
-      - _PIP_ADDITIONAL_REQUIREMENTS=Evidently==0.4.36 transformers==4.45.2 torch==2.4.1 pandas==2.2.3 scikit-learn==1.5.2 mlflow==2.16.0
-      - MLFLOW_TRACKING_URI=http://mlflow:5000
-      - REGISTERED_MODEL_NAME=Sentiment
+      AIRFLOW_HOME: /opt/airflow_home
+      AIRFLOW__CORE__EXECUTOR: SequentialExecutor
+      AIRFLOW__CORE__LOAD_EXAMPLES: "False"
+      AIRFLOW__CORE__DAGS_FOLDER: /opt/airflow/dags
+      AIRFLOW__LOGGING__BASE_LOG_FOLDER: /opt/airflow_home/logs
+      AIRFLOW__LOGGING__DAG_PROCESSOR_MANAGER_LOG_LOCATION: /opt/airflow_home/logs/dag_processor_manager/dag_processor_manager.log
+      PYTHONPATH: /opt/airflow
+      MLFLOW_TRACKING_URI: http://mlflow:5000
+      REGISTERED_MODEL_NAME: Sentiment
     volumes:
+      - airflow_home:/opt/airflow_home
       - ./airflow/dags:/opt/airflow/dags
       - ./src:/opt/airflow/src
       - ./data:/opt/airflow/data
       - ./artifacts:/opt/airflow/artifacts
     ports: ["8080:8080"]
-    command: bash -lc "pip install --no-cache-dir ${_PIP_ADDITIONAL_REQUIREMENTS} && airflow db init && airflow users create --username admin --password admin --firstname a --lastname b --role Admin --email admin@example.com && airflow webserver & airflow scheduler"
-    depends_on: [mlflow]
+    command:
+      [
+        "bash","-lc",
+        "pip install --no-cache-dir mlflow==2.16.0 transformers==4.45.2 scikit-learn==1.5.2 && \
+         pip install --no-cache-dir --index-url https://download.pytorch.org/whl/cpu \
+           torch==2.4.1+cpu torchvision==0.19.1+cpu torchaudio==2.4.1+cpu && \
+         mkdir -p /opt/airflow_home/logs && \
+         /home/airflow/.local/bin/airflow webserver --port 8080 --hostname 0.0.0.0 & \
+         /home/airflow/.local/bin/airflow scheduler"
+      ]

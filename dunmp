@@ -72,3 +72,26 @@ rm -rf ~/.cache/torch
 docker stop mlflow 2>/dev/null || true
 rm -rf mlruns/*
 mkdir -p mlruns
+
+
+docker compose up -d --force-recreate --no-deps airflow
+docker logs --tail 100 -f airflow
+
+
+
+# il servizio sta ascoltando?
+docker compose exec airflow bash -lc "ss -ltnp | grep 8080 || netstat -ltnp | grep 8080"
+docker compose exec airflow bash -lc "curl -sS http://localhost:8080 | head -n 10"
+
+docker compose config
+
+
+docker compose down -v
+sudo fuser -k 5000/tcp 2>/dev/null || true
+
+docker compose build airflow airflow-init
+
+
+docker compose down -v
+sudo fuser -k 5000/tcp 2>/dev/null || true
+docker compose build airflow airflow-init

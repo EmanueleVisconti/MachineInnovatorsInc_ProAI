@@ -1,1 +1,30 @@
-hello
+# Stop e pulizia porte
+docker compose down -v
+sudo fuser -k 5000/tcp 2>/dev/null || true
+
+# Verifica sintassi compose
+docker compose config
+
+# Avvia SOLO MLflow e verifica che ascolti sulla 5000
+docker compose up -d mlflow
+docker compose logs -f mlflow   # esci con Ctrl+C quando vedi "Listening at: http://0.0.0.0:5000"
+
+# Inizializza Airflow (one-off) → deve terminare con successo
+docker compose run --rm airflow-init
+
+# Avvia Airflow (webserver + scheduler) e attendi la riga di listening
+docker compose up -d airflow
+docker compose logs -f airflow  # attendi "Listening at: http://0.0.0.0:8080"
+
+
+
+_______
+docker compose down -v
+sudo fuser -k 5000/tcp 2>/dev/null || true
+
+docker compose up -d mlflow
+docker compose run --rm airflow-init
+docker compose up -d airflow
+docker compose logs -f airflow   # attendi “Listening at: http://0.0.0.0:8080”
+
+mkdir -p artifacts
