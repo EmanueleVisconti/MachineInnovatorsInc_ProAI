@@ -8,7 +8,7 @@ from airflow.utils import timezone as tz
 
 DATA_DIR = "/opt/airflow/data"
 ART_DIR = "/opt/airflow/artifacts"
-HOLDOUT = os.path.join(DATA_DIR, "holdoutENG.csv")
+HOLDOUT = os.path.join(DATA_DIR, "holdout.csv")
 REF = os.path.join(DATA_DIR, "raw", "reference.csv")
 CUR = os.path.join(DATA_DIR, "raw", "current.csv")
 

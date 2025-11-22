@@ -1,5 +1,7 @@
 # src/monitoring/drift_report.py
-import argparse, json, os
+import argparse
+import json
+import os
 import pandas as pd
 from transformers import (
     AutoTokenizer,
@@ -7,7 +9,7 @@ from transformers import (
     TextClassificationPipeline,
 )
 from evidently.report import Report
-from evidently.metrics import ColumnDriftMetric, CategoricalDriftMetric
+from evidently.metrics import ColumnDriftMetric
 
 MODEL_ID = "cardiffnlp/twitter-roberta-base-sentiment-latest"
 LABELS = {0: "negative", 1: "neutral", 2: "positive"}
@@ -36,20 +38,22 @@ def _predict(pipe, s: pd.Series) -> list[str]:
 
 def main(ref_csv: str, cur_csv: str, out_dir: str = "artifacts") -> int:
     os.makedirs(out_dir, exist_ok=True)
-    ref = pd.read_csv(ref_csv)
-    cur = pd.read_csv(cur_csv)
-    ref = ref.dropna(subset=["text"]).copy()
-    cur = cur.dropna(subset=["text"]).copy()
+    ref = pd.read_csv(ref_csv).dropna(subset=["text"]).copy()
+    cur = pd.read_csv(cur_csv).dropna(subset=["text"]).copy()
 
-    ref["len"], cur["len"] = ref.text.str.len(), cur.text.str.len()
+    # feature semplice + predizione categoriale
+    ref["len"] = ref["text"].str.len()
+    cur["len"] = cur["text"].str.len()
 
     pipe = _pipeline()
-    ref["pred"], cur["pred"] = _predict(pipe, ref.text), _predict(pipe, cur.text)
+    ref["pred"] = _predict(pipe, ref["text"])
+    cur["pred"] = _predict(pipe, cur["text"])
 
+    # In Evidently 0.4.x, ColumnDriftMetric funziona anche su colonne categoriali
     report = Report(
         metrics=[
             ColumnDriftMetric(column_name="len"),
-            CategoricalDriftMetric(column_name="pred"),
+            ColumnDriftMetric(column_name="pred"),
         ]
     )
     report.run(reference_data=ref[["len", "pred"]], current_data=cur[["len", "pred"]])
@@ -59,19 +63,21 @@ def main(ref_csv: str, cur_csv: str, out_dir: str = "artifacts") -> int:
         json.dump(js, f, indent=2)
     report.save_html(os.path.join(out_dir, "drift_report.html"))
 
-    # Ritorna 0 se nessun drift forte, 1 se drift
+    # Ritorna 0 se nessun drift “forte”, 1 se drift su una delle due colonne
+    # La chiave nei dict di Evidently 0.4.x è "drift_detected"
     metrics = {m["metric"]: m for m in js.get("metrics", [])}
-    len_drift = (
-        metrics.get("ColumnDriftMetric", {})
-        .get("result", {})
-        .get("drift_detected", False)
-    )
-    cat_drift = (
-        metrics.get("CategoricalDriftMetric", {})
-        .get("result", {})
-        .get("drift_detected", False)
-    )
-    return 1 if (len_drift or cat_drift) else 0
+
+    # Ogni m ha "column_name": "len"/"pred"
+    def drift_for(col):
+        for m in js.get("metrics", []):
+            res = m.get("result", {})
+            if res.get("column_name") == col:
+                return bool(res.get("drift_detected", False))
+        return False
+
+    len_drift = drift_for("len")
+    pred_drift = drift_for("pred")
+    return 1 if (len_drift or pred_drift) else 0
 
 
 if __name__ == "__main__":
@@ -80,5 +86,4 @@ if __name__ == "__main__":
     ap.add_argument("--current", required=True)
     ap.add_argument("--out", default="artifacts")
     args = ap.parse_args()
-    code = main(args.reference, args.current, args.out)
-    raise SystemExit(code)
+    raise SystemExit(main(args.reference, args.current, args.out))

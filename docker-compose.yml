@@ -67,7 +67,7 @@ services:
     command:
       [
         "bash","-lc",
-        "pip install --no-cache-dir mlflow==2.16.0 transformers==4.45.2 scikit-learn==1.5.2 && \
+        "pip install --no-cache-dir mlflow==2.16.0 transformers==4.45.2 scikit-learn==1.5.2 Evidently==0.4.36 && \
          pip install --no-cache-dir --index-url https://download.pytorch.org/whl/cpu \
            torch==2.4.1+cpu torchvision==0.19.1+cpu torchaudio==2.4.1+cpu && \
          mkdir -p /opt/airflow_home/logs && \

@@ -1,0 +1,112 @@
+{
+  "metrics": [
+    {
+      "metric": "ColumnDriftMetric",
+      "result": {
+        "column_name": "len",
+        "column_type": "num",
+        "stattest_name": "K-S p_value",
+        "stattest_threshold": 0.05,
+        "drift_score": 1.0,
+        "drift_detected": false,
+        "current": {
+          "small_distribution": {
+            "x": [
+              11.0,
+              14.6,
+              18.2,
+              21.8,
+              25.4,
+              29.0,
+              32.6,
+              36.2,
+              39.8,
+              43.4,
+              47.0
+            ],
+            "y": [
+              0.016203703703703706,
+              0.030092592592592598,
+              0.05787037037037035,
+              0.04629629629629632,
+              0.03703703703703702,
+              0.03935185185185184,
+              0.02314814814814814,
+              0.009259259259259274,
+              0.009259259259259255,
+              0.009259259259259255
+            ]
+          }
+        },
+        "reference": {
+          "small_distribution": {
+            "x": [
+              11.0,
+              14.6,
+              18.2,
+              21.8,
+              25.4,
+              29.0,
+              32.6,
+              36.2,
+              39.8,
+              43.4,
+              47.0
+            ],
+            "y": [
+              0.016203703703703706,
+              0.030092592592592598,
+              0.05787037037037035,
+              0.04629629629629632,
+              0.03703703703703702,
+              0.03935185185185184,
+              0.02314814814814814,
+              0.009259259259259274,
+              0.009259259259259255,
+              0.009259259259259255
+            ]
+          }
+        }
+      }
+    },
+    {
+      "metric": "ColumnDriftMetric",
+      "result": {
+        "column_name": "pred",
+        "column_type": "cat",
+        "stattest_name": "chi-square p_value",
+        "stattest_threshold": 0.05,
+        "drift_score": 1.0,
+        "drift_detected": false,
+        "current": {
+          "small_distribution": {
+            "x": [
+              "negative",
+              "neutral",
+              "positive"
+            ],
+            "y": [
+              37,
+              22,
+              61
+            ]
+          }
+        },
+        "reference": {
+          "small_distribution": {
+            "x": [
+              "negative",
+              "neutral",
+              "positive"
+            ],
+            "y": [
+              37,
+              22,
+              61
+            ]
+          }
+        }
+      }
+    }
+  ]
+}
