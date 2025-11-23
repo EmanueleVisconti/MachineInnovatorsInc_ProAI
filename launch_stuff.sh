@@ -1,94 +1,104 @@
-#!/usr/bin/env bash
+#!/bin/bash
 set -euo pipefail
 
-DC="docker compose"
-AIRFLOW_PORT="${AIRFLOW_PORT:-8080}"
-MLFLOW_PORT="${MLFLOW_PORT:-5000}"
-APP_PORT="${APP_PORT:-8000}"
-PROM_PORT="${PROM_PORT:-9090}"
-PUSHGW_PORT="${PUSHGW_PORT:-9091}"
-GRAFANA_PORT="${GRAFANA_PORT:-3000}"
+echo ""
+echo "======================================="
+echo "      MachineInnovators – Launcher"
+echo "======================================="
+echo ""
 
-free_port() {
-  local p="$1"
-  { fuser -k "${p}/tcp"; } >/dev/null 2>&1 || true
-}
-
-wait_http() {
-  local url="$1" timeout="${2:-120}" start ts
-  start=$(date +%s || /bin/date +%s)
-  while true; do
-    if curl -fsS "$url" >/dev/null 2>&1; then return 0; fi
-    ts=$(date +%s || /bin/date +%s)
-    if (( ts - start > timeout )); then
-      echo "TIMEOUT waiting $url" >&2
-      return 1
-    fi
-    sleep 1
-  done
-}
-
-case "${1:-up}" in
-  up)
-    echo "==> validating docker-compose.yml"
-    $DC config >/dev/null
-
-    echo "==> freeing ports"
-    for p in "$MLFLOW_PORT" "$AIRFLOW_PORT" "$APP_PORT" "$PROM_PORT" "$PUSHGW_PORT" "$GRAFANA_PORT"; do
-      free_port "$p"
-    done
-
-    echo "==> building images (if needed)"
-    $DC build app >/dev/null || true
-
-    echo "==> starting MLflow"
-    $DC up -d mlflow
-    wait_http "http://localhost:${MLFLOW_PORT}/" 120
-    echo "✓ MLflow ready"
-
-    echo "==> initializing Airflow (idempotent)"
-    $DC run --rm airflow-init bash -lc '
-      mkdir -p /opt/airflow/{logs,dags,plugins,logs/scheduler} &&
-      airflow db migrate &&
-      airflow users create \
-        --username admin --password admin \
-        --firstname a --lastname b \
-        --role Admin --email admin@example.com || true
-    '
-
-    echo "==> starting Airflow"
-    $DC up -d airflow
-
-    echo "==> starting app + monitoring stack"
-    $DC up -d app pushgateway prometheus grafana
-
-    echo "==> status"
-    $DC ps
-    echo ""
-    echo "Airflow UI:   http://localhost:${AIRFLOW_PORT}"
-    echo "MLflow UI:    http://localhost:${MLFLOW_PORT}"
-    echo "App (FastAPI):http://localhost:${APP_PORT}/docs"
-    echo "Prometheus:   http://localhost:${PROM_PORT}"
-    echo "Pushgateway:  http://localhost:${PUSHGW_PORT}"
-    echo "Grafana:      http://localhost:${GRAFANA_PORT}"
-    ;;
-
-  down)
-    $DC down -v
-    ;;
-
-  restart-airflow)
-    $DC stop airflow || true
-    free_port "$AIRFLOW_PORT"
-    $DC up -d airflow
-    ;;
-
-  logs)
-    $DC logs -f "$2"
-    ;;
-
-  *)
-    echo "Usage: $0 {up|down|restart-airflow|logs <service>}"
+# ------------------------------------------------------------
+# 1) Verifica che docker-compose.yml esista
+# ------------------------------------------------------------
+if [ ! -f docker-compose.yml ]; then
+    echo "❌ ERRORE: docker-compose.yml non trovato!"
     exit 1
-    ;;
-esac
+fi
+echo "✓ docker-compose.yml trovato"
+
+# ------------------------------------------------------------
+# 2) Libera porte comuni se bloccate
+# ------------------------------------------------------------
+FREE_PORT() {
+    local PORT="$1"
+    if lsof -iTCP:"$PORT" -sTCP:LISTEN >/dev/null 2>&1; then
+        echo "→ libero porta $PORT"
+        kill -9 $(lsof -t -i:"$PORT") 2>/dev/null || true
+    fi
+}
+
+echo ""
+echo "→ Libero eventuali porte bloccate…"
+FREE_PORT 5000   # MLflow
+FREE_PORT 8080   # Airflow
+FREE_PORT 8000   # App
+FREE_PORT 9090   # Prometheus
+FREE_PORT 9091   # Pushgateway
+
+echo "✓ Porte liberate"
+
+# ------------------------------------------------------------
+# 3) Ricostruisci l’immagine Airflow se necessario
+# ------------------------------------------------------------
+echo ""
+echo "→ Ricostruisco immagine Docker personalizzata di Airflow…"
+docker compose build airflow --no-cache
+echo "✓ Immagine ricostruita"
+
+# ------------------------------------------------------------
+# 4) Avvia MLflow e aspetta che risponda
+# ------------------------------------------------------------
+echo ""
+echo "→ Avvio MLflow…"
+docker compose up -d mlflow
+
+echo "→ Attendo MLflow (max 120s)…"
+timeout 120 bash -c '
+    until curl -fsS http://localhost:5000/ >/dev/null 2>&1; do
+        sleep 2
+    done
+'
+
+echo "✓ MLflow è pronto"
+
+# ------------------------------------------------------------
+# 5) Esegui Airflow Init (idempotente)
+# ------------------------------------------------------------
+echo ""
+echo "→ Inizializzo Airflow…"
+docker compose run --rm airflow-init || true
+echo "✓ Airflow DB pronto"
+
+# ------------------------------------------------------------
+# 6) Avvia Airflow Webserver + Scheduler
+# ------------------------------------------------------------
+echo ""
+echo "→ Avvio Airflow…"
+docker compose up -d airflow
+
+echo "→ Attendo Airflow (max 120s)…"
+timeout 120 bash -c '
+    until curl -fsS http://localhost:8080/health >/dev/null 2>&1; do
+        sleep 2
+    done
+'
+
+echo "✓ Airflow è pronto"
+
+# ------------------------------------------------------------
+# 7) Avvia App + PushGW + Prometheus + Grafana
+# ------------------------------------------------------------
+echo ""
+echo "→ Avvio App + Monitoraggio…"
+docker compose up -d app pushgateway prometheus grafana
+
+echo ""
+echo "✓ Tutti i servizi sono attivi!"
+echo "---------------------------------------"
+echo "MLflow:       https://$(hostname)-5000.app.github.dev"
+echo "Airflow:      https://$(hostname)-8080.app.github.dev"
+echo "App Serving:  https://$(hostname)-8000.app.github.dev/docs"
+echo "Prometheus:   https://$(hostname)-9090.app.github.dev"
+echo "PushGateway:  https://$(hostname)-9091.app.github.dev"
+echo "Grafana:      https://$(hostname)-3000.app.github.dev"
+echo "---------------------------------------"
