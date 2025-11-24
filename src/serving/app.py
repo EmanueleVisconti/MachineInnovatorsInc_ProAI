@@ -67,6 +67,11 @@ def predict(item: Item):
         REQUEST_LATENCY.observe(time.time() - start)
 
 
+@app.get("/health")
+def health():
+    return {"status": "ok"}
+
+
 @app.get("/metrics")
 def metrics():
     data = generate_latest()
