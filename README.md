@@ -90,6 +90,15 @@ docker compose exec airflow airflow dags test retrain_sentiment 2025-01-01
   - Il task `drift` genera la metrica `data_drift_flag` verso Pushgateway.
   - I task `train` e `evaluate_and_promote` registrano ed eseguono il modello in MLflow.
 
+**Come forzare il ramo di retrain anche senza drift**
+- Dalla UI, quando fai "Trigger DAG" aggiungi nel JSON di configurazione: `{ "force_retrain": true }`.
+- In alternativa (più persistente), imposta la Variable Airflow `force_retrain=true` da Admin → Variables.
+  - Entrambi i metodi fanno sì che il task `branch` scelga sempre `train` → `evaluate_and_promote` invece di fermarsi a `finish`.
+
+**Eseguire un singolo task dalla UI**
+- Nella griglia del DAG, clicca sul task (es. `train`) → **Run** → "Run with upstream" se vuoi includere le dipendenze oppure "Run" per eseguire solo quel task con i valori XCom già presenti.
+- Per riprovare un task fallito senza rilanciare tutto il DAG, puoi cliccare sul cerchio del task → "Clear" (per ripartire) o "Run" (per schedulare subito).
+
 Tip: se vuoi vedere il valore pubblicato in tempo reale dalla UI Prometheus, dopo aver lanciato il DAG vai su **Graph**, inserisci `data_drift_flag`, premi **Execute** e poi **(Graph)** in alto per visualizzare il punto.
 
 ### 7) Verifica metrica di drift
@@ -98,66 +107,3 @@ Tip: se vuoi vedere il valore pubblicato in tempo reale dalla UI Prometheus, dop
 curl "http://localhost:9090/api/v1/query?query=data_drift_flag"
 ```
 - In Grafana, il pannello `Data Drift Flag` dovrebbe mostrare il valore appena pubblicato.
-
-## Checklist di test rapida
-
-### 0) Pulizia (opzionale, se vuoi ripartire da zero)
-```bash
-docker compose down --volumes --remove-orphans
-docker system prune -f  # opzionale per pulire immagini non usate
-```
-
-### 1) Avvio stack completo
-```bash
-docker compose up --build
-```
-Attendi che i log mostrino tutti i servizi in `running` (app, mlflow, airflow, prometheus, pushgateway, grafana).
-
-### 2) Test endpoint FastAPI
-- Healthcheck:
-```bash
-curl -f http://localhost:8000/health
-```
-- Inferenza (sostituisci il testo a piacere):
-```bash
-curl -X POST http://localhost:8000/predict \
-  -H 'Content-Type: application/json' \
-  -d '{"text": "I love this product"}'
-```
-
-### 3) Metriche e Prometheus
-- Endpoint grezzo delle metriche esposte dalla app:
-```bash
-curl http://localhost:8000/metrics | head
-```
-- Interfaccia web Prometheus: http://localhost:9090
-  - Vai su **Graph** e prova query come `app_requests_total`, `app_errors_total`, `app_request_latency_seconds_bucket`, `data_drift_flag`.
-  - Se vuoi verificare che la metrica arrivi dopo una richiesta: esegui il curl di inferenza (punto 2) e poi ricarica il grafico `app_requests_total`.
-
-### 4) Grafana
-- GUI: http://localhost:3000 (user/pass `admin` / `admin`).
-- Dashboard preprovisionata: `MLOps – Sentiment App`.
-- Dopo aver fatto almeno una richiesta a `/predict`, i pannelli su richieste/latency devono aggiornarsi.
-- Il pannello `data_drift_flag` si aggiorna quando il DAG Airflow invia la metrica al Pushgateway (vedi punto 6).
-
-### 5) MLflow
-- GUI: http://localhost:5000
-- I run vengono creati dal DAG (train/evaluate) e sono salvati in `./mlruns`. Puoi verificare da UI che esperimenti e versioni del modello `Sentiment` siano presenti.
-
-### 6) Airflow (DAG `retrain_sentiment`)
-- GUI: http://localhost:8080 (user/pass `admin` / `admin`). Attiva il DAG `retrain_sentiment` e avvia un run manuale.
-- Esecuzione rapida da terminale (senza passare dalla UI):
-```bash
-docker compose exec airflow airflow dags test retrain_sentiment 2025-01-01
-```
-  - Il task `drift` genera la metrica `data_drift_flag` verso Pushgateway.
-  - I task `train` e `evaluate_and_promote` registrano ed eseguono il modello in MLflow.
-
-### 7) Verifica metrica di drift
-- Dopo aver eseguito il DAG, controlla in Prometheus (UI o con curl):
-```bash
-curl "http://localhost:9090/api/v1/query?query=data_drift_flag"
-```
-- In Grafana, il pannello `Data Drift Flag` dovrebbe mostrare il valore appena pubblicato.
-
-Le metriche esportate dalla app sono `app_requests_total`, `app_errors_total`, `app_request_latency_seconds` e `data_drift_flag`. Il DAG Airflow (task drift) invia `data_drift_flag` al Pushgateway, che viene scrappato da Prometheus e visualizzato in Grafana.
