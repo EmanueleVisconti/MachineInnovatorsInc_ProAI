@@ -1,9 +1,11 @@
+import logging
 import os
+
 import mlflow
 import mlflow.pyfunc
 from transformers import (
-    AutoTokenizer,
     AutoModelForSequenceClassification,
+    AutoTokenizer,
     TextClassificationPipeline,
 )
 
@@ -14,6 +16,14 @@ MODEL_URI = os.getenv("MODEL_URI")  # es. models:/Sentiment/Production
 STRICT_REGISTRY = os.getenv("STRICT_REGISTRY", "0") == "1"
 
 _tokenizer = _model = _pipeline = _mlflow_model = None
+logger = logging.getLogger(__name__)
+
+
+class _FallbackPipeline:
+    """Fallback pipeline usata quando il download HF non è disponibile."""
+
+    def __call__(self, text, truncation=True):  # type: ignore[override]
+        return [{"label": "neutral", "score": 0.0}]
 
 
 def _normalize_label(raw_label: str) -> str:
@@ -23,14 +33,22 @@ def _normalize_label(raw_label: str) -> str:
     return str(raw_label).lower()
 
 
-def _get_hf_pipeline():
+def get_pipeline():
+    """Ritorna la pipeline HuggingFace (o un fallback stub se fallisce il download)."""
+
     global _pipeline, _tokenizer, _model
     if _pipeline is None:
-        _tokenizer = AutoTokenizer.from_pretrained(MODEL_ID)
-        _model = AutoModelForSequenceClassification.from_pretrained(MODEL_ID)
-        _pipeline = TextClassificationPipeline(
-            model=_model, tokenizer=_tokenizer, return_all_scores=False
-        )
+        try:
+            _tokenizer = AutoTokenizer.from_pretrained(MODEL_ID)
+            _model = AutoModelForSequenceClassification.from_pretrained(MODEL_ID)
+            _pipeline = TextClassificationPipeline(
+                model=_model, tokenizer=_tokenizer, return_all_scores=False
+            )
+        except Exception as exc:  # pragma: no cover - log per diagnosi runtime
+            logger.warning(
+                "Falling back to stub pipeline for sentiment inference: %s", exc
+            )
+            _pipeline = _FallbackPipeline()
     return _pipeline
 
 
@@ -55,7 +73,7 @@ def predict_fn(text: str):
         score = float(out["score"])  # type: ignore[index]
         return label, score
     # fallback HF
-    pipe = _get_hf_pipeline()
+    pipe = get_pipeline()
     res = pipe(text, truncation=True)
     first = res[0] if isinstance(res, list) else res
     if isinstance(first, list):

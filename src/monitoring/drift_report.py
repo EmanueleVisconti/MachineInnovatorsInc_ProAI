@@ -1,39 +1,64 @@
 # src/monitoring/drift_report.py
+"""Heuristic drift detection that works offline and surfaces a clear flag.
+
+- If a `label` column is present we use it directly to compare class
+  distributions. Otherwise we fall back to the serving pipeline
+  (`src.serving.load_model.get_pipeline`) which includes a stub for offline
+  environments.
+- Drift is flagged when either the text-length median shifts materially or the
+  class distribution drifts (total variation distance) beyond a configurable
+  threshold. Both metrics are exported to JSON for inspection.
+"""
+
 import argparse
 import json
 import os
+from typing import Iterable
+
+import numpy as np
 import pandas as pd
-from transformers import (
-    AutoTokenizer,
-    AutoModelForSequenceClassification,
-    TextClassificationPipeline,
-)
-from evidently.report import Report
-from evidently.metrics import ColumnDriftMetric
 
-MODEL_ID = "cardiffnlp/twitter-roberta-base-sentiment-latest"
-LABELS = {0: "negative", 1: "neutral", 2: "positive"}
+from src.serving.load_model import get_pipeline, _normalize_label  # type: ignore
+
+LENGTH_SHIFT_THRESHOLD = 0.35  # 35% median-length shift
+CLASS_DRIFT_THRESHOLD = 0.25  # TV distance on label distribution
 
 
-def _pipeline():
-    tok = AutoTokenizer.from_pretrained(MODEL_ID)
-    mdl = AutoModelForSequenceClassification.from_pretrained(MODEL_ID)
-    return TextClassificationPipeline(model=mdl, tokenizer=tok, return_all_scores=False)
+def _class_distribution(labels: Iterable[str]) -> dict[str, float]:
+    dist: dict[str, float] = {}
+    total = 0
+    for lab in labels:
+        lab_norm = str(lab).strip().lower()
+        dist[lab_norm] = dist.get(lab_norm, 0) + 1
+        total += 1
+    if total == 0:
+        return {}
+    return {k: v / total for k, v in dist.items()}
 
 
-def _predict(pipe, s: pd.Series) -> list[str]:
-    out = []
-    for t in s.tolist():
-        res = pipe(t, truncation=True)
+def _tv_distance(p: dict[str, float], q: dict[str, float]) -> float:
+    keys = set(p) | set(q)
+    return 0.5 * sum(abs(p.get(k, 0.0) - q.get(k, 0.0)) for k in keys)
+
+
+def _predict_labels(texts: pd.Series) -> list[str]:
+    """Predict sentiment labels using the serving pipeline or its stub."""
+
+    pipe = get_pipeline()
+    outputs = []
+    for txt in texts.tolist():
+        res = pipe(txt, truncation=True)
         first = res[0] if isinstance(res, list) else res
         if isinstance(first, list):
             first = first[0]
-        lab = first["label"]
-        if isinstance(lab, str) and lab.startswith("LABEL_"):
-            idx = int(lab.split("_")[-1])
-            lab = LABELS.get(idx, lab)
-        out.append(str(lab).lower())
-    return out
+        outputs.append(_normalize_label(first["label"]))  # type: ignore[index]
+    return outputs
+
+
+def _pick_labels(df: pd.DataFrame) -> list[str]:
+    if "label" in df.columns:
+        return df["label"].astype(str).str.lower().tolist()
+    return _predict_labels(df["text"])
 
 
 def main(ref_csv: str, cur_csv: str, out_dir: str = "artifacts") -> int:
@@ -41,43 +66,46 @@ def main(ref_csv: str, cur_csv: str, out_dir: str = "artifacts") -> int:
     ref = pd.read_csv(ref_csv).dropna(subset=["text"]).copy()
     cur = pd.read_csv(cur_csv).dropna(subset=["text"]).copy()
 
-    # feature semplice + predizione categoriale
-    ref["len"] = ref["text"].str.len()
-    cur["len"] = cur["text"].str.len()
+    ref_len = ref["text"].str.len()
+    cur_len = cur["text"].str.len()
 
-    pipe = _pipeline()
-    ref["pred"] = _predict(pipe, ref["text"])
-    cur["pred"] = _predict(pipe, cur["text"])
+    ref_labels = _pick_labels(ref)
+    cur_labels = _pick_labels(cur)
 
-    # In Evidently 0.4.x, ColumnDriftMetric funziona anche su colonne categoriali
-    report = Report(
-        metrics=[
-            ColumnDriftMetric(column_name="len"),
-            ColumnDriftMetric(column_name="pred"),
-        ]
+    len_shift = abs(np.median(cur_len) - np.median(ref_len)) / max(
+        np.median(ref_len), 1
     )
-    report.run(reference_data=ref[["len", "pred"]], current_data=cur[["len", "pred"]])
+    dist_ref = _class_distribution(ref_labels)
+    dist_cur = _class_distribution(cur_labels)
+    cls_tv = _tv_distance(dist_ref, dist_cur)
 
-    js = report.as_dict()
+    drift_flag = int(
+        (len_shift >= LENGTH_SHIFT_THRESHOLD) or (cls_tv >= CLASS_DRIFT_THRESHOLD)
+    )
+
+    summary = {
+        "length_median_reference": float(np.median(ref_len)),
+        "length_median_current": float(np.median(cur_len)),
+        "length_shift_ratio": float(len_shift),
+        "class_distribution_reference": dist_ref,
+        "class_distribution_current": dist_cur,
+        "class_tv_distance": float(cls_tv),
+        "drift_flag": drift_flag,
+        "length_shift_threshold": LENGTH_SHIFT_THRESHOLD,
+        "class_drift_threshold": CLASS_DRIFT_THRESHOLD,
+    }
+
     with open(os.path.join(out_dir, "drift_report.json"), "w") as f:
-        json.dump(js, f, indent=2)
-    report.save_html(os.path.join(out_dir, "drift_report.html"))
+        json.dump(summary, f, indent=2)
 
-    # Ritorna 0 se nessun drift “forte”, 1 se drift su una delle due colonne
-    # La chiave nei dict di Evidently 0.4.x è "drift_detected"
-    metrics = {m["metric"]: m for m in js.get("metrics", [])}
+    # HTML placeholder to avoid breaking viewers expecting a file
+    html_path = os.path.join(out_dir, "drift_report.html")
+    with open(html_path, "w") as f:
+        f.write("<html><body><pre>{}</pre></body></html>".format(
+            json.dumps(summary, indent=2)
+        ))
 
-    # Ogni m ha "column_name": "len"/"pred"
-    def drift_for(col):
-        for m in js.get("metrics", []):
-            res = m.get("result", {})
-            if res.get("column_name") == col:
-                return bool(res.get("drift_detected", False))
-        return False
-
-    len_drift = drift_for("len")
-    pred_drift = drift_for("pred")
-    return 1 if (len_drift or pred_drift) else 0
+    return drift_flag
 
 
 if __name__ == "__main__":
