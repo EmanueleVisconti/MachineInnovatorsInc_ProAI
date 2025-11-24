@@ -95,3 +95,85 @@ docker compose build airflow airflow-init
 docker compose down -v
 sudo fuser -k 5000/tcp 2>/dev/null || true
 docker compose build airflow airflow-init
+
+# 1) Spegni lo stack corrente (se presente)
+docker compose down -v || true
+
+docker ps --filter "publish=5000" --format "{{.ID}} {{.Names}} {{.Ports}}"
+docker ps --filter "publish=5000" -q | xargs -r docker stop
+docker ps --filter "publish=5000" -q | xargs -r docker rm -f
+
+docker ps -a | grep -i mlflow || true
+docker ps -aq -f "name=mlflow" | xargs -r docker rm -f
+
+docker ps --format "table {{.Names}}\t{{.Ports}}\t{{.Status}}"
+
+# Target UP?
+curl -fsS http://localhost:9090/-/ready && echo "prometheus ready"
+
+# Elenco target/scrape (deve mostrare state: up)
+# 50 richieste /predict
+docker compose exec app bash -lc '
+python - << "PY"
+import requests, random, time
+URL="http://localhost:8000/predict"
+texts=[
+ "I love this product!", "This is terrible.", "Meh, it is fine.",
+ "Awesome job!", "Worst experience ever", "Nothing special"
+]
+for i in range(50):
+    t=random.choice(texts)
+    try:
+        r=requests.post(URL,json={"text":t},timeout=10)
+        print(i, r.status_code, r.json())
+    except Exception as e:
+        print("ERR",e)
+    time.sleep(0.2)
+PY
+'
+
+docker compose exec app bash -lc '
+python - << "PY"
+import requests, random, time
+URL="http://localhost:8000/predict"
+texts=[
+ "I love this product!", "This is terrible.", "Meh, it is fine.",
+ "Awesome job!", "Worst experience ever", "Nothing special"
+]
+for i in range(50):
+    t=random.choice(texts)
+    r=requests.post(URL,json={"text":t},timeout=30)
+    try:
+        print(i, r.status_code, r.json())
+    except Exception as e:
+        print(i, r.status_code, "BODY:", r.text[:200], "ERR:", e)
+    time.sleep(0.2)
+PY
+'
+docker compose logs grafana | tail -n 80
+
+docker compose exec grafana ls -l /etc/grafana/dashboards
+apt-get update && apt-get install -y curl
+for i in {1..20}; do 
+  curl -s -X POST http://localhost:8000/predict \
+       -H "Content-Type: application/json" \
+       -d '{"text":"I love this!"}'
+  echo
+done
+
+docker compose logs app | tail -n 50
+
+docker compose exec app bash -lc '
+for i in {1..20}; do
+  curl -s -X POST http://localhost:8000/predict \
+       -H "Content-Type: application/json" \
+       -d "{\"text\":\"I love this!\"}"
+done
+'
+
+docker compose exec pushgateway wget -qO- http://localhost:9091/metrics
+
+curl -s https://glorious-space-trout-44x559vqrjwfj45g-8000.app.github.dev/metrics | head
+curl -s http://localhost:8000/metrics | head
+curl -s https://glorious-space-trout-44x559vqrjwfj45g-8000.app.github.dev/metrics
+docker compose exec pushgateway wget -qO- http://pushgateway:9091/metrics | grep sentiment

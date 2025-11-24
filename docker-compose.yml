@@ -15,13 +15,17 @@ services:
       - ./mlruns:/mlruns
     ports:
       - "${MLFLOW_PORT:-5000}:5000"
-    # healthcheck disabilitato: dev_sh gestisce readiness via HTTP
+    # disabilito healthcheck per non avere rotture nel dev script
     healthcheck:
       disable: true
 
-  # one-off: init DB + utente (il comando viene lanciato da dev_sh)
+  # ----------------------------------------------------
+  # One-off: inizializza DB Airflow + utente admin
+  # ----------------------------------------------------
   airflow-init:
-    image: apache/airflow:2.9.2
+    build:
+      context: .
+      dockerfile: docker/airflow.Dockerfile
     user: "50000:0"
     environment:
       AIRFLOW_HOME: /opt/airflow
@@ -36,10 +40,36 @@ services:
       - ./src:/opt/airflow/src
       - ./data:/opt/airflow/data
       - ./artifacts:/opt/airflow/artifacts
+    entrypoint: >
+      bash -c '
+        echo "===> [INIT] Migration DB...";
+        airflow db migrate;
 
+        echo "===> [INIT] Create admin user...";
+        airflow users create \
+          --username admin \
+          --firstname admin \
+          --lastname admin \
+          --password admin \
+          --role Admin \
+          --email admin@example.com \
+        || true;
+
+        echo "===> [INIT] Done.";
+      '
+
+
+  # ----------------------------------------------------
+  # Airflow webserver + scheduler
+  # ----------------------------------------------------
   airflow:
-    image: apache/airflow:2.9.2
+    build:
+      context: .
+      dockerfile: docker/airflow.Dockerfile
     user: "50000:0"
+    depends_on:
+      - mlflow
+      - airflow-init
     environment:
       AIRFLOW_HOME: /opt/airflow
       AIRFLOW__CORE__EXECUTOR: SequentialExecutor
@@ -50,8 +80,6 @@ services:
       PYTHONPATH: /opt/airflow
       MLFLOW_TRACKING_URI: http://mlflow:5000
       REGISTERED_MODEL_NAME: Sentiment
-      _PIP_ADDITIONAL_REQUIREMENTS: >-
-        mlflow==2.16.0 transformers==4.45.2 scikit-learn==1.5.2 Evidently==0.4.36 prometheus-client==0.20.0
     volumes:
       - airflow_home:/opt/airflow
       - ./airflow/dags:/opt/airflow/dags
@@ -62,12 +90,13 @@ services:
       - "${AIRFLOW_PORT:-8080}:8080"
     command: >
       bash -lc "
-        echo 'pip reqs: ' $$_PIP_ADDITIONAL_REQUIREMENTS &&
-        pip install --no-cache-dir $$_PIP_ADDITIONAL_REQUIREMENTS &&
-        mkdir -p /opt/airflow/logs &&
-        airflow webserver --port 8080 --hostname 0.0.0.0 & airflow scheduler
+        airflow webserver --port 8080 --hostname 0.0.0.0 &
+        airflow scheduler
       "
 
+  # ----------------------------------------------------
+  # FastAPI app (serving modello)
+  # ----------------------------------------------------
   app:
     build:
       context: .
@@ -81,11 +110,6 @@ services:
     depends_on:
       - mlflow
 
-  pushgateway:
-    image: prom/pushgateway:v1.8.0
-    ports:
-      - "${PUSHGW_PORT:-9091}:9091"
-
   prometheus:
     image: prom/prometheus:v2.55.1
     volumes:
@@ -95,7 +119,6 @@ services:
       - "${PROM_PORT:-9090}:9090"
     depends_on:
       - app
-      - pushgateway
 
   grafana:
     image: grafana/grafana:11.2.0
@@ -104,9 +127,12 @@ services:
       - GF_SECURITY_ADMIN_PASSWORD=admin
     volumes:
       - ./docker/grafana-datasource.yml:/etc/grafana/provisioning/datasources/datasource.yml:ro
-      - ./docker/grafana-provisioning.yml:/etc/grafana/provisioning/dashboards/provisioning.yml:ro
-      - ./docker/grafana-dashboard.json:/etc/grafana/dashboards/mlops.json:ro
+      - ./docker/grafana-provisioning.yml:/etc/grafana/provisioning/dashboards/dashboard.yml:ro
+      - ./docker/grafana/dashboards:/etc/grafana/dashboards:ro
+
     ports:
       - "${GRAFANA_PORT:-3000}:3000"
+
     depends_on:
       - prometheus
+

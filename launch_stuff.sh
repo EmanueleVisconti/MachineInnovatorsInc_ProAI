@@ -1,104 +1,60 @@
-#!/bin/bash
+#!/usr/bin/env bash
 set -euo pipefail
 
-echo ""
+echo
 echo "======================================="
-echo "      MachineInnovators – Launcher"
+echo "  MachineInnovators – Full Launcher"
 echo "======================================="
-echo ""
+echo
 
-# ------------------------------------------------------------
-# 1) Verifica che docker-compose.yml esista
-# ------------------------------------------------------------
-if [ ! -f docker-compose.yml ]; then
-    echo "❌ ERRORE: docker-compose.yml non trovato!"
-    exit 1
+# 0) Validazione compose
+if [[ ! -f docker-compose.yml ]]; then
+  echo "ERRORE: docker-compose.yml non trovato nella cartella corrente."
+  exit 1
 fi
-echo "✓ docker-compose.yml trovato"
 
-# ------------------------------------------------------------
-# 2) Libera porte comuni se bloccate
-# ------------------------------------------------------------
-FREE_PORT() {
-    local PORT="$1"
-    if lsof -iTCP:"$PORT" -sTCP:LISTEN >/dev/null 2>&1; then
-        echo "→ libero porta $PORT"
-        kill -9 $(lsof -t -i:"$PORT") 2>/dev/null || true
-    fi
-}
-
-echo ""
-echo "→ Libero eventuali porte bloccate…"
-FREE_PORT 5000   # MLflow
-FREE_PORT 8080   # Airflow
-FREE_PORT 8000   # App
-FREE_PORT 9090   # Prometheus
-FREE_PORT 9091   # Pushgateway
-
+# 1) Libera porte (ancora, per sicurezza)
+echo "→ Libero porte potenzialmente bloccate…"
+for p in 5000 8080 8000 9090 9091; do
+  if command -v fuser >/dev/null 2>&1; then
+    sudo fuser -k "${p}/tcp" 2>/dev/null || true
+  fi
+done
 echo "✓ Porte liberate"
 
-# ------------------------------------------------------------
-# 3) Ricostruisci l’immagine Airflow se necessario
-# ------------------------------------------------------------
-echo ""
-echo "→ Ricostruisco immagine Docker personalizzata di Airflow…"
-docker compose build airflow --no-cache
-echo "✓ Immagine ricostruita"
+# 2) Ferma stack se esiste
+echo
+echo "→ Fermando eventuali container…"
+docker compose down -v || true
+echo "✓ Containers fermati"
 
-# ------------------------------------------------------------
-# 4) Avvia MLflow e aspetta che risponda
-# ------------------------------------------------------------
-echo ""
+# 3) Build immagini custom (Airflow + app)
+echo
+echo "→ Build immagini (Airflow + App)…"
+docker compose build airflow-init airflow app
+echo "✓ Build completata"
+
+# 4) Avvia MLflow
+echo
 echo "→ Avvio MLflow…"
 docker compose up -d mlflow
+echo "✓ MLflow avviato"
 
-echo "→ Attendo MLflow (max 120s)…"
-timeout 120 bash -c '
-    until curl -fsS http://localhost:5000/ >/dev/null 2>&1; do
-        sleep 2
-    done
-'
+# 5) Avvia init Airflow (db migrate + utente)
+echo
+echo "→ Inizializzo Airflow (db + utente admin)…"
+docker compose run --rm airflow-init
+echo "✓ Airflow init completato"
 
-echo "✓ MLflow è pronto"
+# 6) Avvia Airflow, app, Prometheus, Pushgateway, Grafana
+echo
+echo "→ Avvio Airflow + App + Monitoring…"
+docker compose up -d airflow app prometheus grafana
+echo "✓ Stack avviato"
 
-# ------------------------------------------------------------
-# 5) Esegui Airflow Init (idempotente)
-# ------------------------------------------------------------
-echo ""
-echo "→ Inizializzo Airflow…"
-docker compose run --rm airflow-init || true
-echo "✓ Airflow DB pronto"
+echo
+echo "→ Container attivi:"
+docker ps --format "table {{.Names}}\t{{.Ports}}\t{{.Status}}"
 
-# ------------------------------------------------------------
-# 6) Avvia Airflow Webserver + Scheduler
-# ------------------------------------------------------------
-echo ""
-echo "→ Avvio Airflow…"
-docker compose up -d airflow
-
-echo "→ Attendo Airflow (max 120s)…"
-timeout 120 bash -c '
-    until curl -fsS http://localhost:8080/health >/dev/null 2>&1; do
-        sleep 2
-    done
-'
-
-echo "✓ Airflow è pronto"
-
-# ------------------------------------------------------------
-# 7) Avvia App + PushGW + Prometheus + Grafana
-# ------------------------------------------------------------
-echo ""
-echo "→ Avvio App + Monitoraggio…"
-docker compose up -d app pushgateway prometheus grafana
-
-echo ""
-echo "✓ Tutti i servizi sono attivi!"
-echo "---------------------------------------"
-echo "MLflow:       https://$(hostname)-5000.app.github.dev"
-echo "Airflow:      https://$(hostname)-8080.app.github.dev"
-echo "App Serving:  https://$(hostname)-8000.app.github.dev/docs"
-echo "Prometheus:   https://$(hostname)-9090.app.github.dev"
-echo "PushGateway:  https://$(hostname)-9091.app.github.dev"
-echo "Grafana:      https://$(hostname)-3000.app.github.dev"
-echo "---------------------------------------"
+echo
+echo "Fatto. Airflow dovrebbe essere su porta 8080, MLflow su 5000, app su 8000, Grafana su 3000."

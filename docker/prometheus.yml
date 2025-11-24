@@ -1,12 +1,8 @@
 global:
-  scrape_interval: 5s
+  scrape_interval: 15s
+  evaluation_interval: 30s
 
 scrape_configs:
-  - job_name: 'api'
+  - job_name: "app"
     static_configs:
-      - targets: ['app:8000']   # nome service nel compose
-
-  - job_name: 'airflow_drift'
-    honor_labels: true
-    static_configs:
-      - targets: ['pushgateway:9091']   # raccoglie metriche pushate dai task Airflow
+      - targets: ["app:8000"]

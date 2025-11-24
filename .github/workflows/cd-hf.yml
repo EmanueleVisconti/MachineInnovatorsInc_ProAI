@@ -1,0 +1,66 @@
+#name: CD to HuggingFace Space
+#
+#on:
+#  push:
+#    branches: [ "main" ]
+#  workflow_dispatch:
+#  release:
+#    types: [published]
+#
+#jobs:
+#  deploy:
+#    runs-on: ubuntu-latest
+#    timeout-minutes: 30
+#    env:
+#      HF_SPACE_ID: ${{ vars.HF_SPACE_ID }}
+#      HF_SPACE_RUNTIME: ${{ vars.HF_SPACE_RUNTIME || 'docker' }}
+#    steps:
+#      - uses: actions/checkout@v4
+#
+#      - name: Install huggingface-hub
+#        run: |
+#          python -m pip install --upgrade pip
+#          pip install "huggingface_hub>=0.24.0"
+#
+#      - name: Validate vars
+#        run: |
+#          test -n "${{ env.HF_SPACE_ID }}" || (echo "Missing HF_SPACE_ID repo var" && exit 1)
+#          test -n "${{ secrets.HF_TOKEN }}" || (echo "Missing HF_TOKEN repo secret" && exit 1)
+#
+#      # opzionale: minimizza cosa si invia alla Space (qui inviamo l’intero repo)
+#      - name: Push repo to HF Space (runtime docker)
+#        env:
+#          HUGGINGFACE_HUB_TOKEN: ${{ secrets.HF_TOKEN }}
+#        run: |
+#          python - <<'PY'
+#          import os, pathlib
+#          from huggingface_hub import HfApi, upload_folder, create_repo, HfFolder
+#
+#          space_id = os.environ["HF_SPACE_ID"]
+#          token = os.environ["HUGGINGFACE_HUB_TOKEN"]
+#
+#          HfFolder.save_token(token)
+#          api = HfApi()
+#
+#          # crea Space se non esiste
+#          try:
+#              api.create_repo(space_id, repo_type="space", space_sdk="docker")
+#          except Exception:
+#              pass  # già esiste
+#
+#          # carica TUTTO il repo (ignora .git)
+#          root = pathlib.Path(".").resolve()
+#          upload_folder(
+#              repo_id=space_id,
+#              repo_type="space",
+#              folder_path=str(root),
+#              path_in_repo="",
+#              allow_patterns=[
+#                "docker/**","src/**","data/**","airflow/**","artifacts/**",
+#                "docker-compose.yml","requirements.txt","README.md",
+#                "Dockerfile","docker/Dockerfile.app","*.md","*.json","*.yml","*.yaml"
+#              ],
+#              ignore_patterns=[".git/**",".github/**","mlruns/**","__pycache__/**",".venv/**"]
+#          )
+#          print("Pushed to HF Space:", space_id)
+#          PY

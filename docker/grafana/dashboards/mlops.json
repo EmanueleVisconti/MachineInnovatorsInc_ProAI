@@ -1,0 +1,40 @@
+{
+  "title": "MLOps – Sentiment App",
+  "panels": [
+    {
+      "type": "graph",
+      "title": "Requests/s",
+      "targets": [
+        { "expr": "rate(app_requests_total[1m])" }
+      ],
+      "gridPos": { "x": 0, "y": 0, "w": 12, "h": 6 }
+    },
+    {
+      "type": "graph",
+      "title": "Error rate",
+      "targets": [
+        { "expr": "rate(app_errors_total[1m])" }
+      ],
+      "gridPos": { "x": 12, "y": 0, "w": 12, "h": 6 }
+    },
+    {
+      "type": "graph",
+      "title": "Latency p50/p90",
+      "targets": [
+        { "expr": "histogram_quantile(0.5, sum(rate(app_request_latency_seconds_bucket[5m])) by (le))" },
+        { "expr": "histogram_quantile(0.9, sum(rate(app_request_latency_seconds_bucket[5m])) by (le))" }
+      ],
+      "gridPos": { "x": 0, "y": 6, "w": 12, "h": 6 }
+    },
+    {
+      "type": "stat",
+      "title": "Drift flag",
+      "targets": [
+        { "expr": "max_over_time(data_drift_flag[5m])" }
+      ],
+      "gridPos": { "x": 12, "y": 6, "w": 12, "h": 6 }
+    }
+  ],
+  "schemaVersion": 36,
+  "version": 1
+}

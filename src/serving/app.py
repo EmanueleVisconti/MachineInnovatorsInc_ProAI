@@ -1,39 +1,73 @@
 from fastapi import FastAPI
+from fastapi.responses import Response
 from pydantic import BaseModel
-from prometheus_client import Counter, Histogram, generate_latest
-from starlette.responses import Response
 import time
-from ..features.preprocess import normalize_text
-from .load_model import predict_fn
-from src.serving.metrics import MetricsMiddleware, router as metrics_router
 
-app = FastAPI(title="Sentiment Service", version="0.1.0")
-app.add_middleware(MetricsMiddleware)
-app.include_router(metrics_router)
+from prometheus_client import (
+    Counter,
+    Histogram,
+    Gauge,
+    generate_latest,
+    CONTENT_TYPE_LATEST,
+)
 
-PRED_COUNT = Counter("predictions_total", "Total predictions", ["label"])
-LATENCY = Histogram("inference_latency_seconds", "Latency seconds")
+from src.serving.load_model import predict_fn
 
 
+# ====================================================
+# 1) PRIMA si crea l'app
+# ====================================================
+app = FastAPI()
+
+# ====================================================
+# 2) Poi si definiscono le metriche
+# ====================================================
+REQUEST_COUNT = Counter(
+    "sentiment_requests_total", "Total prediction requests"
+)
+
+ERROR_COUNT = Counter(
+    "sentiment_error_total", "Total prediction errors"
+)
+
+REQUEST_LATENCY = Histogram(
+    "sentiment_latency_seconds", "Prediction latency"
+)
+
+DRIFT_FLAG = Gauge(
+    "sentiment_drift_flag", "1 if drift detected else 0"
+)
+
+# ====================================================
+# 3) Solo ORA: startup event
+# ====================================================
+@app.on_event("startup")
+def startup_event():
+    DRIFT_FLAG.set(0)
+
+
+# ====================================================
+# API
+# ====================================================
 class Item(BaseModel):
     text: str
-
-
-@app.get("/health")
-def health():
-    return {"status": "ok"}
 
 
 @app.post("/predict")
 def predict(item: Item):
     start = time.time()
-    clean = normalize_text(item.text)
-    label, score = predict_fn(clean)
-    LATENCY.observe(time.time() - start)
-    PRED_COUNT.labels(label).inc()
-    return {"label": label, "score": score}
+    try:
+        label, score = predict_fn(item.text)
+        REQUEST_COUNT.inc()
+        return {"label": label, "score": score}
+    except Exception as e:
+        ERROR_COUNT.inc()
+        return {"error": str(e)}
+    finally:
+        REQUEST_LATENCY.observe(time.time() - start)
 
 
 @app.get("/metrics")
 def metrics():
-    return Response(generate_latest(), media_type="text/plain")
+    data = generate_latest()
+    return Response(content=data, media_type=CONTENT_TYPE_LATEST)

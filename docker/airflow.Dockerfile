@@ -1,17 +1,29 @@
 FROM apache/airflow:2.9.2
 
+# -------------------------------------------------------------------
+# Extra strumenti utili nel container (curl, git…)
+# -------------------------------------------------------------------
+USER root
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    wget \
+    git \
+ && rm -rf /var/lib/apt/lists/*
+
+# -------------------------------------------------------------------
+# Librerie Python aggiuntive (come avevamo quando tutto girava)
+# -------------------------------------------------------------------
 USER airflow
-ARG AIRFLOW_VERSION=2.9.2
-ARG PYTHON_VERSION=3.11
-ARG CONSTRAINT_URL=https://raw.githubusercontent.com/apache/airflow/constraints-${AIRFLOW_VERSION}/constraints-${PYTHON_VERSION}.txt
 
-# Pacchetti che non confliggono con le constraint
-RUN pip install --no-cache-dir --constraint "${CONSTRAINT_URL}" \
-    Evidently==0.4.36 \
-    transformers==4.45.2 \
-    mlflow==2.16.0
-
-# Torch CPU fuori dalle constraint (ruote ufficiali)
 RUN pip install --no-cache-dir \
-    --index-url https://download.pytorch.org/whl/cpu \
-    torch==2.4.1+cpu torchvision==0.19.1+cpu torchaudio==2.4.1+cpu
+      mlflow==2.16.0 \
+      transformers==4.45.2 \
+      scikit-learn==1.5.2 \
+      Evidently==0.4.36 \
+      prometheus-client==0.20.0 \
+ && pip install --no-cache-dir --index-url https://download.pytorch.org/whl/cpu \
+      torch==2.4.1+cpu \
+      torchvision==0.19.1+cpu \
+      torchaudio==2.4.1+cpu
+

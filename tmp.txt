@@ -44,3 +44,4 @@ docker compose exec airflow bash -lc "mkdir -p /opt/airflow/artifacts && python 
 
 # verifica se i file ora ci sono
 docker compose exec airflow bash -lc "ls -l /opt/airflow/artifacts || true"
+

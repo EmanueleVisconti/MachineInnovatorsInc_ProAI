@@ -4,10 +4,22 @@ from prometheus_client import CollectorRegistry, Gauge, push_to_gateway
 
 
 def main(gateway: str, job: str, instance: str, drift: int):
+    """
+    Invia al Pushgateway una metrica di tipo Gauge:
+    data_drift_flag = 1 (drift) / 0 (no drift)
+
+    Sarà poi Prometheus a scrappare il Pushgateway e Grafana
+    leggerà la metrica data_drift_flag.
+    """
     reg = CollectorRegistry()
-    g = Gauge("drift_detected", "1 if drift detected else 0", registry=reg)
+    g = Gauge("data_drift_flag", "1 if drift detected else 0", registry=reg)
     g.set(float(drift))
-    push_to_gateway(gateway, job=job, grouping_key={"instance": instance}, registry=reg)
+    push_to_gateway(
+        gateway,
+        job=job,
+        grouping_key={"instance": instance},
+        registry=reg,
+    )
 
 
 if __name__ == "__main__":
