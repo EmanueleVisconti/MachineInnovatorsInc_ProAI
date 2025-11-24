@@ -1,0 +1,21 @@
+text,label
+"This is an extremely long, spammy, and repetitive negative rant about a product that keeps repeating the same words over and over again to make the length wildly different from the reference dataset. The product is awful awful awful and I will never buy it again.",negative
+"Another excessively verbose complaint with many filler words to stretch the length significantly beyond anything in the reference dataset, creating a massive distribution shift on the text length feature that Evidently checks for drift.",negative
+"Totally unrelated topic with long filler content about politics, weather, and cooking recipes, nothing about the product itself, and it just keeps going to change the pattern of predictions and lengths drastically.",neutral
+"Long neutral story with unrelated content that continues for many sentences, ensuring the token length is far above typical tweets or short reviews, which should trip the drift detector on the length column.",neutral
+"Massive block of text describing a fictional narrative, mixing positive and negative sentiments but mostly neutral phrasing, to alter the predicted label distribution compared to the reference.",neutral
+"A huge wall of text praising an unrelated service, with extremely verbose compliments and run-on sentences that differ from the concise inputs seen in the reference data.",positive
+"Extremely long sarcastic praise that might confuse the sentiment classifier and change the predicted label distribution. This should help trigger drift on the prediction column.",positive
+"Negative negative negative negative negative review repeated many times to skew the label distribution strongly toward one class.",negative
+"Positive positive positive positive positive celebration repeated many times to skew the label distribution strongly toward the opposite class.",positive
+"Neutral neutral neutral neutral neutral repetition that should flatten the distribution and look unlike the reference set.",neutral
+"Super long neutral paragraph that keeps adding words to inflate the token count and distort the length-based feature.",neutral
+"Another endless piece of text that rambles about nothing in particular but is intentionally lengthy to ensure the column 'len' differs from the reference.",neutral
+"Very long negative paragraph mentioning failures, crashes, delays, missing parts, horrible support, and overall disastrous experience, repeated with filler words.",negative
+"Gigantic review full of emojis 😀😡😀😡 and alternating sentiments, purposely inconsistent and long to make the classifier uncertain.",neutral
+"Overly cheerful but super long paragraph with repeated exclamation marks and happy adjectives to create a label skew toward positive.",positive
+"Excessively negative monologue with capital letters and repeated phrases about refunds, returns, and disappointment, extended to hundreds of characters.",negative
+"Long, meandering neutral description of a day in the life, with no product mentions, to confuse the model and change the predicted distribution.",neutral
+"Extremely detailed fictional story mixing tones, again very long, to alter both length and predicted labels compared to reference tweets.",neutral
+"Huge spam-like paragraph advertising unrelated products with a mix of positive calls-to-action and negative rants about competitors.",positive
+"Final extra-long line to ensure the dataset is heavily skewed in length and content, making drift detection almost certain.",negative

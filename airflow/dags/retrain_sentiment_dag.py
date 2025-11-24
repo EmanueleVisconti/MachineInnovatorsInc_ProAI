@@ -2,6 +2,7 @@
 from datetime import datetime, timedelta
 import os, shutil, glob, subprocess, json
 from airflow import DAG
+from airflow.models import Variable
 from airflow.operators.python import PythonOperator, BranchPythonOperator
 from airflow.utils import timezone as tz
 
@@ -67,6 +68,16 @@ def compute_drift():
 
 def branch_callable(**context):
     ti = context["ti"]
+    dag_run = context.get("dag_run")
+
+    # Override manuale: dag_run.conf o Variable di Airflow "force_retrain"
+    conf_force = False
+    if dag_run and dag_run.conf:
+        conf_force = dag_run.conf.get("force_retrain", False) is True
+
+    var_force_raw = Variable.get("force_retrain", default_var="false")
+    var_force = str(var_force_raw).lower() in {"1", "true", "yes", "y"}
+
     # Forza retrain se è passato >=7 giorni dall'ultimo eseguito di QUESTO task (branch)
     time_gate = False
     last = ti.get_previous_ti()  # può essere None al primo run
@@ -75,6 +86,10 @@ def branch_callable(**context):
         time_gate = (tz.utcnow() - last.end_date) > timedelta(days=7)
 
     drift_code = ti.xcom_pull(task_ids="drift", key="return_value")
+
+    if conf_force or var_force:
+        return "train"
+
     return "train" if (drift_code == 1 or time_gate) else "finish"
 
 
