@@ -6,9 +6,6 @@ Service FastAPI che serve `cardiffnlp/twitter-roberta-base-sentiment-latest` con
 - [`notebooks/colab_delivery.ipynb`](notebooks/colab_delivery.ipynb): notebook pronto per Google Colab con i passaggi per clonare il repo, installare le dipendenze, addestrare una versione del modello, valutarla/promuoverla con MLflow file-based e testare l'inferenza.
 - Aprilo da GitHub con “Open in Colab” oppure caricalo su Drive; è autoconclusivo e usa i file già presenti nel repository (`data/holdout.csv`, ecc.).
 
-## Documentazione di progetto
-- [docs/codebase_overview.md](docs/codebase_overview.md): mappa delle componenti con ruoli, flussi e riferimenti file-per-file.
-
 ## Avvio locale
 
 ### app
