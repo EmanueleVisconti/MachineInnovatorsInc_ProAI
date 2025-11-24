@@ -1,6 +1,6 @@
 # Panoramica della codebase
 
-Questa nota orienta chi corregge sul ruolo di ogni cartella/file chiave, come sono collegati i componenti (serving, training, monitoring) e dove osservare i punti di integrazione.
+Questa nota orienta chi legge sul ruolo di ogni cartella/file chiave, come sono collegati i componenti (serving, training, monitoring) e dove osservare i punti di integrazione.
 
 ## Architettura di alto livello
 
