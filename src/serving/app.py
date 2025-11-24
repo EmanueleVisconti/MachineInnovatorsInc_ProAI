@@ -23,19 +23,19 @@ app = FastAPI()
 # 2) Poi si definiscono le metriche
 # ====================================================
 REQUEST_COUNT = Counter(
-    "sentiment_requests_total", "Total prediction requests"
+    "app_requests_total", "Total prediction requests"
 )
 
 ERROR_COUNT = Counter(
-    "sentiment_error_total", "Total prediction errors"
+    "app_errors_total", "Total prediction errors"
 )
 
 REQUEST_LATENCY = Histogram(
-    "sentiment_latency_seconds", "Prediction latency"
+    "app_request_latency_seconds", "Prediction latency"
 )
 
 DRIFT_FLAG = Gauge(
-    "sentiment_drift_flag", "1 if drift detected else 0"
+    "data_drift_flag", "1 if drift detected else 0"
 )
 
 # ====================================================
