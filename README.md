@@ -107,3 +107,11 @@ Tip: se vuoi vedere il valore pubblicato in tempo reale dalla UI Prometheus, dop
 curl "http://localhost:9090/api/v1/query?query=data_drift_flag"
 ```
 - In Grafana, il pannello `Data Drift Flag` dovrebbe mostrare il valore appena pubblicato.
+
+### 8) Simulare un data drift per innescare il retraining
+- È già pronto un batch “estremo” in `data/incoming/drift_example.csv` con testi lunghi/off-topic che dovrebbero far rilevare drift.
+- Attiva e triggera il DAG `retrain_sentiment`: il task `ingest` userà quel batch e il ramo `train -> evaluate_and_promote` verrà eseguito.
+- Dettagli e alternative (creare un batch personalizzato) in `docs/data_drift_simulation.md`.
+
+### 9) Capire come scegliamo e swappiamo il modello
+- Il flusso completo di training, valutazione (macro-F1 su `data/holdout.csv`) e promozione a `Production` è spiegato in `docs/training_and_promotion.md`.
