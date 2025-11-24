@@ -89,3 +89,5 @@ docker compose exec airflow airflow dags test retrain_sentiment 2025-01-01
 curl "http://localhost:9090/api/v1/query?query=data_drift_flag"
 ```
 - In Grafana, il pannello `Data Drift Flag` dovrebbe mostrare il valore appena pubblicato.
+
+Le metriche esportate dalla app sono `app_requests_total`, `app_errors_total`, `app_request_latency_seconds` e `data_drift_flag`. Il DAG Airflow (task drift) invia `data_drift_flag` al Pushgateway, che viene scrappato da Prometheus e visualizzato in Grafana.
