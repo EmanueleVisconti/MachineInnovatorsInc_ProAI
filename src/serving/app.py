@@ -67,6 +67,11 @@ def predict(item: Item):
         REQUEST_LATENCY.observe(time.time() - start)
 
 
+@app.get("/")
+def root():
+    return {"message": "working!"}
+
+
 @app.get("/health")
 def health():
     return {"status": "ok"}

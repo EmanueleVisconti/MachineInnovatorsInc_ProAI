@@ -11,6 +11,11 @@ Service FastAPI che serve `cardiffnlp/twitter-roberta-base-sentiment-latest` con
 
 ## Avvio locale
 
+> Nota sui tempi: lo stack richiede ~60–90 secondi per partire completamente
+> (Airflow + MLflow + Grafana). La prima inferenza può impiegare qualche
+> secondo per il warm-up del modello Hugging Face; le successive sono quasi
+> immediate perché la pipeline resta in memoria.
+
 ### app
 ```bash
 python -m venv .venv && source .venv/bin/activate
@@ -28,13 +33,17 @@ docker run --rm -p 8000:8000 machineinnovators_inc_proai
 ```bash
 docker compose up --build
 ```
-- FastAPI: http://localhost:8000
-- Prometheus: http://localhost:9090 (job `app` + `pushgateway`)
-- Pushgateway: http://localhost:9091
+- FastAPI: http://localhost:8000 (homepage risponde `{"message": "working!"}` se tutto è ok)
+- Prometheus: http://localhost:9090 (job `app` + scrape del Pushgateway)
+- Pushgateway: http://localhost:9091 (UI dedicata al buffer delle metriche pushate)
 - Grafana: http://localhost:3000 (admin/admin). Dashboard preconfigurata `MLOps – Sentiment App`.
 
-Le metriche esportate dalla app sono `app_requests_total`, `app_errors_total`, `app_request_latency_seconds` e `data_drift_flag`.
-Il DAG Airflow (task drift) invia `data_drift_flag` al Pushgateway, che viene scrappato da Prometheus e visualizzato in Grafana.
+Le metriche esportate dalla app sono `app_requests_total`, `app_errors_total`,
+`app_request_latency_seconds` e `data_drift_flag`. Il DAG Airflow (task drift)
+invia `data_drift_flag` al Pushgateway, che viene scrappato da Prometheus e
+visualizzato in Grafana. Una spiegazione dettagliata dei pannelli e delle
+statistiche (p50/p90 della latenza, ecc.) è in
+[`docs/metrics_guide.md`](docs/metrics_guide.md).
 
 ## Checklist di test rapida
 
@@ -73,10 +82,11 @@ curl http://localhost:8000/metrics | head
      curl "http://localhost:9090/api/v1/targets" | jq '.data.activeTargets[] | {job: .labels.job, health: .health, endpoint: .discoveredLabels.__address__}'
      ```
   2. **Graph**: inserisci la query `app_requests_total` e premi **Execute**. Se non vedi dati, manda una richiesta a `/predict` (punto 2) e ripremi **Execute**.
-  3. Per verificare la metrica di drift via API REST:
+     3. Per verificare la metrica di drift via API REST:
      ```bash
      curl "http://localhost:9090/api/v1/query?query=data_drift_flag"
      ```
+- L'interfaccia celeste su http://localhost:9091 è il Pushgateway (buffer delle metriche pushate dal DAG), non un secondo Prometheus: è normale che mostri una UI diversa e minimale.
 
 ### 4) Grafana
 - GUI: http://localhost:3000 (user/pass `admin` / `admin`).
