@@ -120,6 +120,13 @@ services:
     depends_on:
       - app
 
+  pushgateway:
+    image: prom/pushgateway:v1.9.0
+    ports:
+      - "${PUSHGATEWAY_PORT:-9091}:9091"
+    depends_on:
+      - prometheus
+
   grafana:
     image: grafana/grafana:11.2.0
     environment:
