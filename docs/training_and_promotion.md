@@ -1,6 +1,6 @@
 # Flusso di training, valutazione e promozione del modello
 
-Questo documento riassume come il DAG `retrain_sentiment` addestra, valuta e decide se sostituire il modello in produzione. È pensato per il docente che vuole capire (e provare) lo **swap** del modello.
+Questo documento riassume come il DAG `retrain_sentiment` addestra, valuta e decide se sostituire il modello in produzione, utile per comprendere e riprodurre lo **swap** del modello.
 
 ## Componenti coinvolti
 - **Training**: `python -m src.models.train_roberta --experiment sentiment`

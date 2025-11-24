@@ -1,6 +1,6 @@
 # Come simulare un data drift e forzare il retraining
 
-Questa guida mostra come far vedere al docente un caso di **drift rilevato** che instrada il DAG `retrain_sentiment` nei task `train` → `evaluate_and_promote`.
+Questa guida mostra come presentare rapidamente un caso di **drift rilevato** che instrada il DAG `retrain_sentiment` nei task `train` → `evaluate_and_promote`.
 
 ## Opzione A – usare il batch già pronto
 1. C'è un batch "estremo" in `data/incoming/drift_example.csv` con testi molto lunghi e distribuzioni di label/predizioni diverse dal reference.
@@ -17,7 +17,7 @@ Questa guida mostra come far vedere al docente un caso di **drift rilevato** che
    - In Airflow: il ramo `train -> evaluate_and_promote` sarà eseguito (stato verde) invece di `finish`.
 
 ## Opzione B – creare un batch personalizzato
-Se vuoi mostrare al docente un drift "costruito" al volo:
+Se vuoi dimostrare un drift "costruito" al volo:
 ```bash
 cat > data/incoming/custom_drift.csv <<'TXT'
 text,label
