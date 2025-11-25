@@ -19,12 +19,15 @@ MODEL_NAME = os.environ.get("REGISTERED_MODEL_NAME", "Sentiment")
 
 def ingest():
     os.makedirs(os.path.dirname(CUR), exist_ok=True)
-    incoming = sorted(glob.glob(os.path.join(DATA_DIR, "incoming", "*.csv")))
+    incoming = glob.glob(os.path.join(DATA_DIR, "incoming", "*.csv"))
     if incoming:
-        shutil.copy(incoming[0], CUR)
+        latest_csv = max(incoming, key=os.path.getmtime)
+        shutil.copy(latest_csv, CUR)
+        print(f"[ingest] Copiato batch {latest_csv} -> {CUR}")
     else:
         # fallback: riusa l'holdout come batch current per demo
         shutil.copy(HOLDOUT, CUR)
+        print(f"[ingest] Nessun incoming: fallback {HOLDOUT} -> {CUR}")
 
 
 def compute_drift():
