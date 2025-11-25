@@ -90,6 +90,17 @@ def branch_callable(**context):
 
     drift_code = ti.xcom_pull(task_ids="drift", key="return_value")
 
+    # support dev smoke flag (dag_run.conf or Airflow Variable)
+    conf_dev_smoke = False
+    if dag_run and dag_run.conf:
+        conf_dev_smoke = dag_run.conf.get("dev_smoke", False) is True
+
+    var_dev_raw = Variable.get("force_dev_smoke", default_var="false")
+    var_dev = str(var_dev_raw).lower() in {"1", "true", "yes", "y"}
+
+    if conf_dev_smoke or var_dev:
+        return "train_smoke"
+
     if conf_force or var_force:
         return "train"
 
@@ -117,11 +128,45 @@ def train(ti=None):
         ti.xcom_push(key="new_uri", value=new_uri)
 
 
+def train_smoke(ti=None):
+    env = os.environ.copy()
+    env["MLFLOW_TRACKING_URI"] = MLFLOW
+    dev_suffix = os.environ.get("REGISTERED_MODEL_DEV_SUFFIX", "-dev")
+    # esegui il training dev (script leggero)
+    subprocess.check_call(
+        [
+            "python",
+            "-m",
+            "src.models.train_smoke",
+            "--experiment",
+            "sentiment",
+            "--n_samples",
+            os.environ.get("SMOKE_N_SAMPLES", "1"),
+        ],
+        env=env,
+    )
+    # recupera la versione dev appena registrata
+    from mlflow.tracking import MlflowClient
+
+    client = MlflowClient(tracking_uri=MLFLOW)
+    dev_model_name = f"{MODEL_NAME}{dev_suffix}"
+    versions = client.search_model_versions(f"name='{dev_model_name}'")
+    if not versions:
+        raise RuntimeError(f"Nessuna versione trovata per il modello '{dev_model_name}'")
+    latest = max(versions, key=lambda v: int(v.version))
+    new_uri = f"models:/{dev_model_name}/{int(latest.version)}"
+    if ti:
+        ti.xcom_push(key="new_uri", value=new_uri)
+
+
 def evaluate_and_promote(ti=None):
     # 1) prova a leggere la URI dal train
     new_uri = None
     if ti:
         new_uri = ti.xcom_pull(task_ids="train", key="new_uri")
+        if not new_uri:
+            # try the dev smoke task too
+            new_uri = ti.xcom_pull(task_ids="train_smoke", key="new_uri")
 
     # 2) fallback robusto: prendi comunque l'ultima versione registrata
     if not new_uri:
@@ -174,6 +219,7 @@ with DAG(
         python_callable=branch_callable,
     )
     t_train = PythonOperator(task_id="train", python_callable=train)
+    t_train_smoke = PythonOperator(task_id="train_smoke", python_callable=train_smoke)
     t_eval = PythonOperator(
         task_id="evaluate_and_promote", python_callable=evaluate_and_promote
     )
@@ -181,4 +227,5 @@ with DAG(
 
     t_ingest >> t_drift >> t_branch
     t_branch >> t_train >> t_eval
+    t_branch >> t_train_smoke >> t_eval
     t_branch >> t_finish

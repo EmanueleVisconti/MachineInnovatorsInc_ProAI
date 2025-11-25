@@ -21,6 +21,9 @@ Questo documento riassume come il DAG `retrain_sentiment` addestra, valuta e dec
 4. `train`: allena e registra una nuova versione MLflow del modello `Sentiment` e pubblica la URI in XCom.
 5. `evaluate_and_promote`: carica la URI della nuova versione (o l'ultima registrata se manca XCom), valuta su `data/holdout.csv` e, se migliore, la promuove a `Production`.
 
+### Nota Dev/Smoke mode
+Per testing e demo è disponibile una modalità `dev_smoke` che addestra un small-model sklearn su una porzione (head) del CSV e registra il modello con suffisso `-dev` (ad es. `Sentiment-dev`). La modalità dev è pensata solo per test del flusso; i modelli `-dev` non vengono promossi in `Production` automaticamente.
+
 ## Come verificare lo swap di modello
 1. Apri MLflow UI (http://localhost:5000) e vai in **Models → Sentiment**: noterai versioni con stage `None` o `Production`.
 2. Dopo l'esecuzione del task `evaluate_and_promote`:

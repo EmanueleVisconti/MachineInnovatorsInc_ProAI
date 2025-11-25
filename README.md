@@ -104,6 +104,15 @@ curl http://localhost:8000/metrics | head
 ```bash
 docker compose exec airflow airflow dags test retrain_sentiment 2025-01-01
 ```
+## Dev/Smoke mode per retraining (demo)
+Per risparmiare risorse in fase di sviluppo e demo, è disponibile una modalità "dev/smoke" per il retraining:
+
+- Esecuzione: dalla GUI Airflow, quando fai "Trigger DAG" passa nel JSON: `{ "dev_smoke": true }` per far eseguire una versione rapida del training (script `train_smoke`).
+- Configurazione: puoi impostare la Variable Airflow `force_dev_smoke=true` per abilitare permanentemente la scelta di `train_smoke`.
+- Comportamento: `train_smoke` addestra un piccolo modello sklearn su una cima del CSV (head N rows) e registra una versione con suffisso `-dev` (es. `Sentiment-dev`) su MLflow, così **non** verrà automaticamente promossa a `Production`.
+- Parametri runtime: imposta `SMOKE_N_SAMPLES` env var per cambiare il numero di righe campionate. Default: `1`.
+
+Nota: la modalità dev è pensata per test del flusso e demo; i modelli con suffisso `-dev` non sostituiscono la versione reale del modello di produzione.
   - Il task `drift` genera la metrica `data_drift_flag` verso Pushgateway.
   - I task `train` e `evaluate_and_promote` registrano ed eseguono il modello in MLflow.
 
@@ -111,10 +120,6 @@ docker compose exec airflow airflow dags test retrain_sentiment 2025-01-01
 - Dalla UI, quando fai "Trigger DAG" aggiungi nel JSON di configurazione: `{ "force_retrain": true }`.
 - In alternativa (più persistente), imposta la Variable Airflow `force_retrain=true` da Admin → Variables.
   - Entrambi i metodi fanno sì che il task `branch` scelga sempre `train` → `evaluate_and_promote` invece di fermarsi a `finish`.
-
-**Eseguire un singolo task dalla UI**
-- Nella griglia del DAG, clicca sul task (es. `train`) → **Run** → "Run with upstream" se vuoi includere le dipendenze oppure "Run" per eseguire solo quel task con i valori XCom già presenti.
-- Per riprovare un task fallito senza rilanciare tutto il DAG, puoi cliccare sul cerchio del task → "Clear" (per ripartire) o "Run" (per schedulare subito).
 
 Tip: se vuoi vedere il valore pubblicato in tempo reale dalla UI Prometheus, dopo aver lanciato il DAG vai su **Graph**, inserisci `data_drift_flag`, premi **Execute** e poi **(Graph)** in alto per visualizzare il punto.
 
